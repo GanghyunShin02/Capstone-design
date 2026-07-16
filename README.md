@@ -18,3 +18,19 @@ msh_rect = mesh.create_rectangle(
 )
 # Unit cube [0,1]^3 — 4×4×4 → 384 tet cells
 msh_3d = mesh.create_unit_cube(MPI.COMM_WORLD, 4, 4, 4)
+
+
+# Default diagonal direction
+msh_right = mesh.create_unit_square(
+    MPI.COMM_WORLD, 4, 4,
+    diagonal=mesh.DiagonalType.right
+)
+# Left diagonal
+msh_left = mesh.create_unit_square(
+    MPI.COMM_WORLD, 4, 4,
+    diagonal=mesh.DiagonalType.left
+)
+# Crossed (Union Jack pattern)
+msh_crossed = mesh.create_unit_square(
+    MPI.COMM_WORLD, 4, 4,
+    diagonal=mesh.DiagonalType.crossed
