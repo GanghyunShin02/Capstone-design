@@ -1,0 +1,598 @@
+---
+title: "Finite Elements: Implementation with FEniCSx"
+subtitle: "Part II -- Chapter 3: Meshes"
+author: 
+   - name: "Kee-Youn Yoo"
+     affiliation: "Process Systems Laboratory<br>Department of Chemical and Biomolecular Engineering"
+format:
+  revealjs:
+    theme: default
+    slide-number: true
+    chalkboard: true
+    preview-links: auto
+    html-math-method: katex
+    width: 1280
+    height: 720
+    transition: slide
+    fontsize: 1.5em
+    code-line-numbers: false
+    highlight-style: github
+    logo: seoultech_logo.png
+    css: styles.css     
+---
+
+## Motivation
+We have quadrature rules (Ch. II-1) and basis functions (Ch. II-2) on a **reference cell**.
+To assemble FE systems over an entire domain, we need a **mesh** — a data structure that describes:
+
+::: {.fragment}
+::: {.incremental}
+- Which **cells** (triangles/tets) make up the domain
+- Which **vertices**, **edges**, **faces** exist and how they connect
+- The **physical coordinates** of each vertex
+- **Adjacency**: which entities are part of which cell
+- This is the bridge from **local** (single cell) to **global** (entire domain)
+:::
+:::
+
+---
+
+## Outline
+::: {.incremental}
+- **§3.1** Mesh entities — vertices, edges, faces, cells
+- **§3.2** Adjacency — which entities connect to which
+- **§3.3** Mesh geometry — vertex coordinates
+- **§3.4** Implementation — DOLFINx mesh objects
+- **Extra** — Gmsh integration for complex domains
+:::
+
+---
+
+## §3.1 Mesh Entities
+
+A mesh is built from **topological entities** of different dimensions.
+
+::: {.callout-note title="Definition 3.1 — Topological Entity"}
+A topological entity is a pair $(d, i)$ where:
+
+- $d$ = dimension (0 = vertex, 1 = edge, 2 = face/cell in 2D, 3 = cell in 3D)
+- $i$ = index (a unique number within that dimension)
+:::
+
+::: {.fragment}
+
+### Entity types for a 2D triangular mesh (4×4 unit square)
+| Dimension $d$ | Entity type | Count (4×4) |
+|:---:|-----------|:---:|
+| 0 | **Vertices** | 25 |
+| 1 | **Edges** | 56 |
+| 2 | **Cells** (triangles) | 32 |
+
+Euler characteristic: $V - E + F = 25 - 56 + 32 = 1$ ✓
+:::
+
+::: {.fragment}
+> The textbook calls these "mesh entities". DOLFINx uses the same concept via `mesh.topology`.
+:::
+
+---
+
+## §3.1 Entity Dimensions in DOLFINx
+```python
+from dolfinx import mesh
+from mpi4py import MPI
+msh = mesh.create_unit_square(MPI.COMM_WORLD, 2, 2)
+tdim = msh.topology.dim          # topological dimension = 2
+fdim = tdim - 1                   # facet dimension = 1 (edges)
+print(f"Topological dim: {tdim}")
+print(f"Facet dim:       {fdim}")
+```
+::: {.fragment}
+### Counting entities
+```python
+# create_entities for all dims, then count
+for d in range(tdim + 1):
+    msh.topology.create_entities(d)
+
+names = {0: "vertices", 1: "edges", 2: "cells"}
+for d in range(tdim + 1):
+    n = msh.topology.index_map(d).size_local
+    print(f"  dim {d} ({names[d]}): {n}")
+# 4×4 mesh → vertices: 25, edges: 56, cells: 32
+```
+:::
+
+---
+
+## §3.2 Adjacency
+### The key question: which entities are connected?
+
+::: {.callout-note title="Definition 3.2 — Adjacency Function"}
+For each $d_1 > d_2 \geq 0$, the adjacency function:
+$$\mathrm{Adj}_{d_1, d_2}(i) = (i_0, \ldots, i_k)$$
+returns the $d_2$-dimensional entities adjacent to entity $(d_1, i)$, numbered in reference cell order.
+:::
+
+::: {.fragment}
+### Example (from textbook Fig. 3.1)
+$$\mathrm{Adj}_{2,0}(3) = (1, 5, 8) \quad \text{— vertices of cell 3}$$
+$$\mathrm{Adj}_{2,1}(3) = (11, 5, 9) \quad \text{— edges of cell 3}$$
+:::
+
+::: {.fragment}
+> Adjacency tells us: "Cell 3 is made of vertices 1, 5, 8 and has edges 11, 5, 9."
+:::
+
+---
+
+## §3.2 Vertex Ordering Convention
+
+::: {.callout-important title="Textbook Convention (fe-utils)"}
+Vertices of each entity are numbered in **ascending order**:
+$$\mathrm{Adj}_{d_1, 0}(i) = (i_0, \ldots, i_k) \implies i_0 < \cdots < i_k$$
+:::
+
+::: {.callout-warning title="DOLFINx Note"}
+DOLFINx does **not** guarantee ascending vertex ordering — only $\det J > 0$ (orientation) is guaranteed.
+Confirmed in practice: only cell 0 is ascending; most other cells are not.
+:::
+
+::: {.fragment}
+### Why this matters
+::: {.incremental}
+- DOLFINx guarantees **positive Jacobian** ($\det J > 0$) — orientation is correct
+- Global vertex indices may appear in **any order** from `connectivity(2,0).links(c)`
+- Use `[int(x) for x in c2v.links(c)]` to remove `np.int32` wrappers cleanly
+- DOF numbering on shared edges is handled **internally** — not by index order
+:::
+:::
+
+---
+
+## §3.2 Adjacency in DOLFINx
+```python
+# Create cell-to-vertex connectivity (Adj_{2,0})
+msh.topology.create_connectivity(2, 0)
+c2v = msh.topology.connectivity(2, 0)
+# [int(x) for x in ...] removes np.int32 wrappers
+# NOTE: DOLFINx does NOT guarantee ascending order
+verts_0 = [int(x) for x in c2v.links(0)]
+verts_1 = [int(x) for x in c2v.links(1)]
+print(f"Cell 0 vertices: {verts_0}")  # → [0, 1, 2]
+print(f"Cell 1 vertices: {verts_1}")  # → [0, 3, 2]
+```
+::: {.fragment}
+### Cell-to-edge connectivity ($\mathrm{Adj}_{2,1}$) + edge classification
+```python
+msh.topology.create_connectivity(2, 1)
+c2e = msh.topology.connectivity(2, 1)
+print(f"Cell 0 edges: {[int(x) for x in c2e.links(0)]}")  # → [4, 1, 0]
+
+# Upward: edge → cells (classify interior vs boundary)
+msh.topology.create_connectivity(1, 2)
+e2c = msh.topology.connectivity(1, 2)
+ne    = msh.topology.index_map(1).size_local
+n_int = sum(1 for e in range(ne) if len(e2c.links(e)) == 2)
+n_bnd = sum(1 for e in range(ne) if len(e2c.links(e)) == 1)
+print(f"Edges: total={ne}  interior={n_int}  boundary={n_bnd}")
+# 3×3 mesh → total=33, interior=21, boundary=12
+```
+:::
+
+::: {.fragment}
+> `msh.topology.connectivity(d1, d2)` is exactly $\mathrm{Adj}_{d_1, d_2}$ from the textbook.
+:::
+
+---
+
+## §3.2 All Adjacency Combinations
+DOLFINx can compute **any** $(d_1, d_2)$ adjacency pair:
+```python
+# All useful adjacency pairs for a 2D mesh
+pairs = [(2, 0), (2, 1),   # cell → vertex, cell → edge
+         (1, 0),            # edge → vertex
+         (0, 2), (1, 2)]   # vertex → cell, edge → cell (upward)
+for d1, d2 in pairs:
+    msh.topology.create_connectivity(d1, d2)
+    conn = msh.topology.connectivity(d1, d2)
+    print(f"Adj({d1},{d2}): entity 0 → {conn.links(0)}")
+```
+::: {.fragment}
+### Upward adjacency — not in textbook but very useful
+| Direction | Example | Use case |
+|-----------|---------|----------|
+| **Downward** $d_1 > d_2$ | Cell → its vertices | Standard assembly |
+| **Upward** $d_1 < d_2$ | Vertex → cells containing it | Finding boundary cells |
+:::
+
+---
+
+## §3.2 Iterating Over Cells
+### The assembly loop requires visiting every cell
+```python
+# Textbook approach: for c in range(num_cells)
+# DOLFINx: same idea, with topology access
+num_cells = msh.topology.index_map(2).size_local
+msh.topology.create_connectivity(2, 0)
+c2v = msh.topology.connectivity(2, 0)
+for c in range(num_cells):
+    verts = c2v.links(c)
+    # ... compute local stiffness matrix ...
+    # ... assemble into global matrix ...
+```
+
+::: {.fragment}
+> In practice, DOLFINx's `assemble_matrix()` does this loop internally (compiled C++). But understanding it is the point of the textbook.
+:::
+
+---
+
+## §3.3 Mesh Geometry
+### Topology tells us **connections**. Geometry tells us **where**.
+::: {.callout-note title="Mesh Geometry"}
+For meshes with straight edges, the geometry is fully determined by the **vertex coordinates**. All higher-dimensional entities interpolate linearly between their vertices.
+:::
+
+::: {.fragment}
+### In DOLFINx
+```python
+# Vertex coordinates — always shape (n_pts, 3); z=0 for 2D meshes
+coords = msh.geometry.x
+print(f"Geometry array shape: {coords.shape}")
+# 4×4 mesh → (25, 3)
+print(f"First vertex (x, y): ({coords[0,0]:.4f}, {coords[0,1]:.4f})")
+```
+Note: DOLFINx always stores 3D coordinates (z = 0 for 2D meshes).
+:::
+
+::: {.fragment}
+### Accessing coordinates of a specific cell's vertices
+```python
+# Get physical coordinates of cell c's vertices
+# IMPORTANT: geometry.dofmap is a numpy 2D array  → index with [c]
+#            topology.connectivity(d1,d2) is AdjacencyList → use .links(c)
+#            Mixing these two causes AttributeError!
+c = 0
+geom_dofs  = msh.geometry.dofmap[c]     # numpy [c], NOT .links(c)!
+cell_coords = coords[geom_dofs, :2]
+print(f"Cell {c} vertex coords:\n{cell_coords}")
+```
+:::
+
+---
+
+## §3.3 The Jacobian
+
+### From reference cell to physical cell
+For a triangle with vertices $v_0, v_1, v_2$, the affine map is:
+$$x(X) = v_0 + J \cdot X, \qquad J = \begin{bmatrix} v_1 - v_0 & v_2 - v_0 \end{bmatrix}$$
+
+::: {.fragment}
+### Computing the Jacobian manually
+```python
+import numpy as np
+c = 0
+geom_dofs = msh.geometry.dofmap[c]
+v = coords[geom_dofs, :2]  # 2D coords only
+J = np.column_stack([v[1] - v[0], v[2] - v[0]])
+detJ = abs(np.linalg.det(J))
+print(f"|J| = {detJ:.6f}")   # → 0.062500  (= h² for 4×4 mesh, h=0.25)
+print(f"area = |J|/2 = {detJ/2:.6f}")  # → 0.031250
+# For uniform affine meshes, |J| is identical for all cells
+```
+:::
+
+::: {.fragment}
+> In DOLFINx assembly, $J$ and $|J|$ are computed automatically for every cell. You only need manual computation for debugging or educational purposes.
+:::
+
+---
+
+## §3.4 Built-in Mesh Generators
+### Textbook: `UnitSquareMesh`, `UnitIntervalMesh`
+### DOLFINx: `dolfinx.mesh.create_*`
+
+```python
+from dolfinx import mesh
+from mpi4py import MPI
+# Unit interval [0, 1] with 10 cells
+msh_1d = mesh.create_unit_interval(MPI.COMM_WORLD, 10)
+# Unit square [0,1]^2 — triangle (128 cells) or quad (64 cells)
+msh_tri = mesh.create_unit_square(
+    MPI.COMM_WORLD, 8, 8,
+    cell_type=mesh.CellType.triangle      # → 128 cells
+)
+msh_quad = mesh.create_unit_square(
+    MPI.COMM_WORLD, 8, 8,
+    cell_type=mesh.CellType.quadrilateral  # → 64 cells
+)
+# Rectangle [0,2]×[0,0.5] — 16×4 grid → 128 triangle cells
+msh_rect = mesh.create_rectangle(
+    MPI.COMM_WORLD,
+    [np.array([0., 0.]), np.array([2., 0.5])], [16, 4]
+)
+# Unit cube [0,1]^3 — 4×4×4 → 384 tet cells
+msh_3d = mesh.create_unit_cube(MPI.COMM_WORLD, 4, 4, 4)
+```
+
+---
+
+## §3.4 Mesh Diagonal Options
+### The textbook discusses "crossed" vs "right" triangle patterns
+
+```python
+# Default diagonal direction
+msh_right = mesh.create_unit_square(
+    MPI.COMM_WORLD, 4, 4,
+    diagonal=mesh.DiagonalType.right
+)
+# Left diagonal
+msh_left = mesh.create_unit_square(
+    MPI.COMM_WORLD, 4, 4,
+    diagonal=mesh.DiagonalType.left
+)
+# Crossed (Union Jack pattern)
+msh_crossed = mesh.create_unit_square(
+    MPI.COMM_WORLD, 4, 4,
+    diagonal=mesh.DiagonalType.crossed
+)
+```
+
+::: {.fragment}
+| Diagonal type | Cells (4×4 mesh) | Pattern |
+|---------------|:---:|---------|
+| `right` / `left` | **32** | Single diagonal per square |
+| `crossed` | **64** | Both diagonals (Union Jack) |
+
+> The "crossed" mesh doubles the cell count. Relevant for the Stokes inf-sup counter-example (Ch. 6).
+:::
+
+---
+
+## §3.4 Rectangular Domains
+### Not just unit squares — arbitrary rectangles
+
+```python
+# Rectangle [0, 2] x [0, 0.5] — 16×4 grid → 128 triangle cells
+msh_rect = mesh.create_rectangle(
+    MPI.COMM_WORLD,
+    [np.array([0.0, 0.0]), np.array([2.0, 0.5])],
+    [16, 4],
+    cell_type=mesh.CellType.triangle
+)
+print(f"Cells: {msh_rect.topology.index_map(2).size_local}")  # → 128
+```
+
+::: {.fragment}
+### Box in 3D
+```python
+# Box [0, 2] x [0, 1] x [0, 0.5]
+msh_box = mesh.create_box(
+    MPI.COMM_WORLD,
+    [np.array([0.0, 0.0, 0.0]),
+     np.array([2.0, 1.0, 0.5])],
+    [20, 10, 5]
+)
+```
+:::
+
+---
+
+## External Meshes — Gmsh Integration
+### For complex geometries: Gmsh → DOLFINx
+
+```python
+from dolfinx.io import gmshio
+import gmsh
+gmsh.initialize()
+# Create geometry
+gmsh.model.occ.addDisk(0, 0, 0, 1, 1)  # unit disk
+gmsh.model.occ.synchronize()
+# Set mesh size
+gmsh.model.mesh.setSize(
+    gmsh.model.getEntities(0), 0.1
+)
+# Generate 2D mesh
+gmsh.model.mesh.generate(2)
+# Import into DOLFINx
+msh, cell_tags, facet_tags = gmshio.model_to_mesh(
+    gmsh.model, MPI.COMM_WORLD, rank=0, gdim=2
+)
+gmsh.finalize()
+```
+
+::: {.fragment}
+> Gmsh handles arbitrary geometries (circles, L-shapes, channels, CAD imports). DOLFINx reads the result via `gmshio`.
+:::
+
+---
+
+## Gmsh — Importing .msh Files
+### If the mesh is already generated externally
+
+```python
+# Read from file
+msh, cell_tags, facet_tags = gmshio.read_from_msh(
+    "my_mesh.msh",
+    MPI.COMM_WORLD,
+    rank=0,
+    gdim=2
+)
+```
+
+::: {.fragment}
+### What you get
+| Object | Contents |
+|--------|----------|
+| `msh` | DOLFINx mesh (topology + geometry) |
+| `cell_tags` | Material/subdomain markers per cell |
+| `facet_tags` | Boundary markers per facet |
+:::
+
+::: {.fragment}
+> `facet_tags` are essential for applying different BCs on different boundary segments.
+:::
+
+---
+
+## Boundary Identification
+### Textbook: manually check coordinates
+### DOLFINx: topological or geometrical identification
+
+```python
+# Method 1: Geometrical (most common)
+def left_boundary(x):
+    return np.isclose(x[0], 0.0)
+def right_boundary(x):
+    return np.isclose(x[0], 1.0)
+# Find all facets on the left boundary
+left_facets = mesh.locate_entities_boundary(
+    msh, fdim, left_boundary
+)
+print(f"Left boundary facets: {len(left_facets)}")  # 8×8 mesh → 8
+```
+
+::: {.fragment}
+### Method 2: All exterior facets
+```python
+# create_connectivity(fdim, tdim) MUST be called before exterior_facet_indices
+msh.topology.create_connectivity(fdim, tdim)
+exterior = mesh.exterior_facet_indices(msh.topology)
+print(f"All exterior facets: {len(exterior)}")
+# 8×8 mesh → left=8, right=8, bottom=8, top=8, total=32
+```
+:::
+
+---
+
+## Mesh Inspection — Complete Example
+
+```python
+from dolfinx import mesh
+from mpi4py import MPI
+import numpy as np
+msh = mesh.create_unit_square(MPI.COMM_WORLD, 4, 4)
+tdim = msh.topology.dim
+# Create all entities and connectivities
+for d in range(tdim + 1):
+    msh.topology.create_entities(d)
+msh.topology.create_connectivity(tdim, 0)
+msh.topology.create_connectivity(tdim, tdim - 1)
+# Print summary
+for d in range(tdim + 1):
+    n = msh.topology.index_map(d).size_local
+    names = {0: "vertices", 1: "edges", 2: "cells"}
+    print(f"  dim {d} ({names[d]}): {n}")
+# Print first 3 cells
+c2v = msh.topology.connectivity(tdim, 0)
+for c in range(min(3, msh.topology.index_map(tdim).size_local)):
+    verts = [int(x) for x in c2v.links(c)]
+    coords = msh.geometry.x[msh.geometry.dofmap[c], :2]
+    print(f"  Cell {c}: verts={verts}, "
+          f"coords={coords.tolist()}")
+```
+
+---
+
+## MPI — Parallel Meshes
+### DOLFINx meshes are MPI-distributed by default
+
+```python
+# Each MPI rank owns a subset of cells
+comm = msh.comm
+rank = comm.rank
+size = comm.size
+n_local = msh.topology.index_map(tdim).size_local
+n_global = msh.topology.index_map(tdim).size_global
+print(f"Rank {rank}/{size}: "
+      f"{n_local} local / {n_global} global cells")
+```
+
+::: {.fragment}
+### Ghost cells
+```python
+# Cells on the partition boundary have "ghost" copies
+n_ghosts = msh.topology.index_map(tdim).num_ghosts
+print(f"Rank {rank}: {n_ghosts} ghost cells")
+```
+:::
+
+::: {.fragment}
+::: {.callout-warning title="MPI + global quantities"}
+The textbook uses serial meshes. DOLFINx is **parallel by default** — `index_map(d).size_local` gives the rank-local count only.
+
+For global quantities (e.g. L² error), always use `msh.comm.allreduce(...)`:
+
+```python
+val_global = msh.comm.allreduce(val_local, op=MPI.SUM)
+```
+:::
+:::
+
+---
+
+## Textbook → DOLFINx Mapping
+
+| Textbook concept | Textbook code | DOLFINx equivalent |
+|-----------------|---------------|-------------------|
+| Mesh class | `Mesh(vertex_coords, cell_verts)` | `dolfinx.mesh.create_mesh(...)` |
+| Unit square | `UnitSquareMesh(n, n)` | `mesh.create_unit_square(comm, n, n)` |
+| Unit interval | `UnitIntervalMesh(n)` | `mesh.create_unit_interval(comm, n)` |
+| Topological dim | `mesh.dim` | `msh.topology.dim` |
+| Entity count | `mesh.entity_counts[d]` | `msh.topology.index_map(d).size_local` |
+| $\mathrm{Adj}_{d_1,d_2}(i)$ | `mesh.adjacency(d1, d2)[i]` | `msh.topology.connectivity(d1, d2).links(i)` |
+| Vertex coords | `mesh.vertex_coords` | `msh.geometry.x` |
+| Cell vertices | `mesh.cell_vertices[c]` | `connectivity(tdim, 0).links(c)` |
+| Cell coords | `mesh.vertex_coords[verts]` | `msh.geometry.x[msh.geometry.dofmap[c]]` |
+| **Vertex ordering** | Ascending (textbook) | Not guaranteed in DOLFINx ($\det J > 0$ only) |
+| Boundary entities | manual check | `mesh.locate_entities_boundary(...)` |
+| External mesh | — | `gmshio.read_from_msh(...)` |
+
+---
+
+## Exercises
+
+::: {.callout-tip title="Exercise 1 — Mesh Exploration"}
+1. Create a $4 \times 4$ unit square mesh with `right` diagonal
+2. Print the number of vertices, edges, and cells
+3. For each cell, print vertex indices (use `[int(x) for x in ...]`) — note: **not ascending** in DOLFINx; verify $\det J > 0$ instead
+4. Compute $|J|$ for each cell and verify they are all equal (uniform mesh)
+:::
+
+::: {.fragment}
+::: {.callout-tip title="Exercise 2 — Adjacency"}
+1. Create a $3 \times 3$ unit square mesh
+2. Compute and print $\mathrm{Adj}_{2,0}$, $\mathrm{Adj}_{2,1}$, and $\mathrm{Adj}_{1,0}$ for all entities
+3. For edge 0, find which cells contain it (upward adjacency $\mathrm{Adj}_{1,2}$)
+4. Verify: each interior edge is shared by exactly 2 cells, each boundary edge by 1
+:::
+:::
+
+::: {.fragment}
+::: {.callout-tip title="Exercise 3 — Gmsh Integration"}
+1. Use Gmsh to create an L-shaped domain (unit square minus a quarter)
+2. Import into DOLFINx
+3. Count mesh entities and verify the mesh covers the expected area
+4. Identify and count boundary facets on each segment of the L-shape
+:::
+:::
+
+---
+
+## Chapter Summary
+
+| Concept | Theory | DOLFINx |
+|---------|--------|---------|
+| **Mesh entities** | $(d, i)$ pairs | `msh.topology.index_map(d)` |
+| **Adjacency** | $\mathrm{Adj}_{d_1,d_2}(i)$ | `msh.topology.connectivity(d1, d2).links(i)` |
+| **Vertex ordering** | Ascending (textbook) | Not guaranteed in DOLFINx; $\det J > 0$ guaranteed |
+| **Geometry** | Vertex coordinates | `msh.geometry.x` |
+| **Jacobian** | $J = [v_1-v_0 \;\; v_2-v_0]$ | Automatic in assembly |
+| **Unit meshes** | `UnitSquareMesh(n, n)` | `mesh.create_unit_square(comm, n, n)` |
+| **External mesh** | — | `gmshio.read_from_msh(...)` |
+| **Boundary** | Manual coordinate check | `mesh.locate_entities_boundary(...)` |
+
+::: {.fragment}
+### Next: Part II Chapter 4 — Function Spaces
+> DOF maps, local-to-global numbering, `functionspace()`, cell-node map — connecting elements to meshes.
+:::
