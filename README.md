@@ -56,3 +56,33 @@ msh, cell_tags, facet_tags = gmshio.model_to_mesh(
     gmsh.model, MPI.COMM_WORLD, rank=0, gdim=2
 )
 gmsh.finalize()
+
+
+
+
+
+
+
+
+from dolfinx import mesh
+from mpi4py import MPI
+import numpy as np
+msh = mesh.create_unit_square(MPI.COMM_WORLD, 4, 4)
+tdim = msh.topology.dim
+# Create all entities and connectivities
+for d in range(tdim + 1):
+    msh.topology.create_entities(d)
+msh.topology.create_connectivity(tdim, 0)
+msh.topology.create_connectivity(tdim, tdim - 1)
+# Print summary
+for d in range(tdim + 1):
+    n = msh.topology.index_map(d).size_local
+    names = {0: "vertices", 1: "edges", 2: "cells"}
+    print(f"  dim {d} ({names[d]}): {n}")
+# Print first 3 cells
+c2v = msh.topology.connectivity(tdim, 0)
+for c in range(min(3, msh.topology.index_map(tdim).size_local)):
+    verts = [int(x) for x in c2v.links(c)]
+    coords = msh.geometry.x[msh.geometry.dofmap[c], :2]
+    print(f"  Cell {c}: verts={verts}, "
+          f"coords={coords.tolist()}")
