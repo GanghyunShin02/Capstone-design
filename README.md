@@ -34,3 +34,25 @@ msh_left = mesh.create_unit_square(
 msh_crossed = mesh.create_unit_square(
     MPI.COMM_WORLD, 4, 4,
     diagonal=mesh.DiagonalType.crossed
+
+
+
+
+
+from dolfinx.io import gmshio
+import gmsh
+gmsh.initialize()
+# Create geometry
+gmsh.model.occ.addDisk(0, 0, 0, 1, 1)  # unit disk
+gmsh.model.occ.synchronize()
+# Set mesh size
+gmsh.model.mesh.setSize(
+    gmsh.model.getEntities(0), 0.1
+)
+# Generate 2D mesh
+gmsh.model.mesh.generate(2)
+# Import into DOLFINx
+msh, cell_tags, facet_tags = gmshio.model_to_mesh(
+    gmsh.model, MPI.COMM_WORLD, rank=0, gdim=2
+)
+gmsh.finalize()
