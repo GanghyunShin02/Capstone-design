@@ -86,3 +86,80 @@ for c in range(min(3, msh.topology.index_map(tdim).size_local)):
     coords = msh.geometry.x[msh.geometry.dofmap[c], :2]
     print(f"  Cell {c}: verts={verts}, "
           f"coords={coords.tolist()}")
+
+
+
+
+
+
+Exercise 1 — Mesh Exploration
+
+Create a 
+4
+×
+4
+4×4 unit square mesh with right diagonal
+Print the number of vertices, edges, and cells
+For each cell, print vertex indices (use [int(x) for x in ...]) — note: not ascending in DOLFINx; verify 
+det
+⁡
+J
+>
+0
+detJ>0 instead
+Compute 
+∣
+J
+∣
+∣J∣ for each cell and verify they are all equal (uniform mesh)
+Exercise 2 — Adjacency
+
+Create a 
+3
+×
+3
+3×3 unit square mesh
+Compute and print 
+A
+d
+j
+2
+,
+0
+Adj 
+2,0
+​
+ , 
+A
+d
+j
+2
+,
+1
+Adj 
+2,1
+​
+ , and 
+A
+d
+j
+1
+,
+0
+Adj 
+1,0
+​
+  for all entities
+For edge 0, find which cells contain it (upward adjacency 
+A
+d
+j
+1
+,
+2
+Adj 
+1,2
+​
+ )
+Verify: each interior edge is shared by exactly 2 cells, each boundary edge by 1
+
