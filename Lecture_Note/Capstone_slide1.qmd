@@ -1,0 +1,786 @@
+---
+title: "Fem lecture ch.3"
+format: revealjs
+theme: default
+---
+## Motivation
+
+- We study refrence cell at Ch.1 and Ch.2
+
+- In this chapter we study cell's connect, mesh.
+
+---
+
+## Mesh Entities
+
+- A mesh is built from topological entities of difference dimensions
+
+- Call entities as Cell's vertices,edges,cell all.
+
+Topological entitie pair $(d,i)$
+:   $d$ is dimention
+    $i$ is index ; unique number at that dimenstion.
+
+---
+
+## Adjacency
+
+- Adjacency is entitie's connection.
+
+$$
+Adj_{d_1,d_2}(n)=(1,2,3) $$
+
+$d_1$ dimention n's entitie cell has $d_2$ dimention's entitie number 1,2,3.
+n's triangle origined 1,2,3 entities.
+
+---
+
+## Mesh Geometry
+
+- We know cell's connect by adjacency.
+- In mesh geometry, we know positon of cell.
+
+Convert refrence cell to physical cell by Jacobian.
+
+$$
+(\zeta,\eta) \rightarrow (x,y) $$
+
+$$
+J=\begin{pmatrix} \frac{\partial \zeta}{\partial x} & \frac{\partial \zeta}{\partial y} \\
+\frac{\partial \eta}{\partial x} & \frac{\partial \eta}{\partial y} \end{pmatrix} $$
+
+---
+
+- dolfinx calculate jacobian auto.
+
+---
+
+## Mesh generate
+
+- This section is how implement mesh.
+
+```python 
+#| echo: False
+#| output: False
+#| warning: False
+
+msh_tri = mesh.create_unit_square(
+    MPI.COMM_WORLD, 8, 8,
+    cell_type=mesh.CellType.triangle      # → 128 cells
+)
+msh_quad = mesh.create_unit_square(
+    MPI.COMM_WORLD, 8, 8,
+    cell_type=mesh.CellType.quadrilateral  # → 64 cells
+)
+# Rectangle [0,2]×[0,0.5] — 16×4 grid → 128 triangle cells
+msh_rect = mesh.create_rectangle(
+    MPI.COMM_WORLD,
+    [np.array([0., 0.]), np.array([2., 0.5])], [16, 4]
+)
+# Unit cube [0,1]^3 — 4×4×4 → 384 tet cells
+msh_3d = mesh.create_unit_cube(MPI.COMM_WORLD, 4, 4, 4)
+```
+
+
+---
+
+- Mesh view
+
+![triangle](images/triangle.png){width=50%}
+triangle
+![quad](images/quad.png){width=50%}
+quadlirateral
+
+---
+
+![rectangle](images/rectangle.png){width=50%}
+rectangle
+![cube](images/cube.png){width=50%}
+cube
+
+---
+
+- Mesh diagonal option
+
+```python
+#| echo: False
+#| output: False
+#| warning False
+# Default diagonal direction
+msh_right = mesh.create_unit_square(
+    MPI.COMM_WORLD, 4, 4,
+    diagonal=mesh.DiagonalType.right
+)
+# Left diagonal
+msh_left = mesh.create_unit_square(
+    MPI.COMM_WORLD, 4, 4,
+    diagonal=mesh.DiagonalType.left
+)
+# Crossed (Union Jack pattern)
+msh_crossed = mesh.create_unit_square(
+    MPI.COMM_WORLD, 4, 4,
+    diagonal=mesh.DiagonalType.crossed
+)
+```
+---
+
+![rignt](images/right.png){width=50%}
+right
+![left](images/left.png){width=50%}
+left
+
+---
+
+![Cross](images/cross.png){width=50%}
+cross
+
+---
+
+## Use gmsh on complexible mesh.
+
+```Python
+#| echo: False
+#| ouput: False
+#| warning: False
+import gmsh
+gmsh.initialize()
+# Create geometry
+disk=gmsh.model.occ.addDisk(0, 0, 0, 1, 1)  # unit disk
+gmsh.model.occ.synchronize()
+
+gmsh.model.addPhysicalGroup(2,[disk],1)
+
+# Set mesh size
+gmsh.model.mesh.setSize(
+    gmsh.model.getEntities(0), 0.1
+)
+# Generate 2D mesh
+gmsh.model.mesh.generate(2)
+# Import into DOLFINx
+
+meshdata=gmshio.model_to_mesh(gmsh.model,MPI.COMM_WORLD,0,2)
+dom=meshdata.mesh
+
+cell_tags=meshdata.cell_tags
+facet_tags=meshdata.facet_tags
+
+gmsh.finalize()
+
+```
+
+---
+
+- domain made by gmshio
+
+![gmsh](images/gmshdomain.png){width=30%}
+
+
+
+
+---
+
+- domain made by `.msh`
+
+```Python
+#| echo: False
+#| ouput: False
+#| warning: False
+
+meshdata1=gmshio.read_from_msh(
+    "/home/ss/untitled.msh",MPI.COMM_WORLD,
+    0,3
+)
+
+dom1=meshdata1.mesh
+cell_tags1=meshdata1.cell_tags
+facet_tags1=meshdata1.facet_tags
+
+
+with XDMFFile(MPI.COMM_WORLD, "dom1.xdmf", "w") as xdmf:
+    xdmf.write_mesh(dom1)
+```
+---
+
+![torus](images/torus.png)
+
+torus
+
+---
+
+## Mesh inspection
+
+- See Mesh create well.
+
+```Python
+#| echo: False
+#| ouput: false
+#| warning: False
+
+import numpy as np
+msh = mesh.create_unit_square(MPI.COMM_WORLD, 4, 4)
+tdim = msh.topology.dim
+# Create all entities and connectivities
+for d in range(tdim + 1):
+    msh.topology.create_entities(d)
+msh.topology.create_connectivity(tdim, 0)
+msh.topology.create_connectivity(tdim, tdim - 1)
+# Print summary
+for d in range(tdim + 1):
+    n = msh.topology.index_map(d).size_local
+    names = {0: "vertices", 1: "edges", 2: "cells"}
+    print(f"  dim {d} ({names[d]}): {n}")
+# Print first 3 cells
+c2v = msh.topology.connectivity(tdim, 0)
+for c in range(min(3, msh.topology.index_map(tdim).size_local)):
+    verts = [int(x) for x in c2v.links(c)]
+    coords = msh.geometry.x[msh.geometry.dofmap[c], :2]
+    print(f"  Cell {c}: verts={verts}, "
+          f"coords={coords.tolist()}")
+        
+with XDMFFile(MPI.COMM_WORLD, "msh.xdmf", "w") as xdmf:
+    xdmf.write_mesh(msh)
+```
+
+---
+
+- Output
+
+![msh](images/msh.png){width=10%}
+
+
+```text
+  dim 0 (vertices): 25
+  dim 1 (edges): 56
+  dim 2 (cells): 32
+  Cell 0: verts=[0, 1, 2], coords=[[0.75, 0.0], [1.0, 0.0], [1.0, 0.25]]
+  Cell 1: verts=[0, 3, 2], coords=[[0.75, 0.0], [0.75, 0.25], [1.0, 0.25]]
+  Cell 2: verts=[4, 0, 3], coords=[[0.5, 0.0], [0.75, 0.0], [0.75, 0.25]]
+```
+
+---
+
+## Excercise
+
+## Exercises
+
+::: {.callout-tip title="Exercise 1 — Mesh Exploration"}
+1. Create a $4 \times 4$ unit square mesh with `right` diagonal
+2. Print the number of vertices, edges, and cells
+3. For each cell, print vertex indices (use `[int(x) for x in ...]`) — note: **not ascending** in DOLFINx; verify $\det J > 0$ instead
+4. Compute $|J|$ for each cell and verify they are all equal (uniform mesh)
+:::
+
+---
+
+- Code 
+
+```Python
+square=mesh.create_unit_square(MPI.COMM_WORLD,
+                               4,4,
+                               diagonal=mesh.DiagonalType.right)
+
+tdim=square.topology.dim
+
+for dim in range(0,tdim+1):
+    square.topology.create_entities(dim)
+
+square.topology.create_connectivity(tdim, 0)
+square.topology.create_connectivity(tdim, tdim - 1)
+
+for d in range(tdim + 1):
+    n = square.topology.index_map(d).size_local
+    names = {0: "vertices", 1: "edges", 2: "cells"}
+    print(f"  dim {d} ({names[d]}): {n}")
+
+vertic=square.topology.connectivity(tdim,0)
+
+print(vertic)
+#print(type(vertic))
+'''
+<class 'dolfinx.cpp.graph.AdjacencyList_int32'>
+Because type is special,
+call like `vertic.links(n)`.
+'''
+
+coords=square.geometry.x
+b=[]
+detJ=[]
+
+for i in range(square.topology.index_map(tdim).size_local):
+
+    a=[int(x)  for x in vertic.links(i) ]# i번 셀의 정점인덱스를 저장
+    k=(coords[a])
+    b.append(k)
+
+    J1=-k[0][0]+k[1][0]
+    J2=-k[0][0]+k[2][0]
+    J3=-k[0][1]+k[1][1]
+    J4=-k[0][1]+k[2][1]
+
+    dJ=J1*J4-J2*J3
+    detJ.append(dJ)
+
+
+#print(b)
+
+#print(vertic.links(0))
+#print(coords[vertic.links(0)])
+print(detJ)
+```
+
+---
+
+- How calculate Jacobian at first lagrange space
+
+- shape function
+
+$$
+x(\zeta,\eta)=(1-\zeta-\eta)x_0+\zeta x_1+\eta x_2  
+$$
+
+$$
+y(\zeta,\eta)=(1-\zeta-\eta)y_0+\zeta x_1+\eta y_2 
+$$
+
+$$
+J=\begin{pmatrix} \frac{\partial \zeta}{\partial x} & \frac{\partial \zeta}{\partial y} \\
+\frac{\partial \eta}{\partial x} & \frac{\partial \eta}{\partial y} \end{pmatrix} 
+$$
+
+$$
+J=\begin{pmatrix} -x_0+x_1 & -x_0+x_2 \\
+-y_0+y_1 & -y_0+y_2 \end{pmatrix} 
+$$
+
+
+---
+
+- Output
+
+```text
+  dim 0 (vertices): 25
+  dim 1 (edges): 56
+  dim 2 (cells): 32
+Return all cells verticle index<AdjacencyList> with 32 nodes
+  0: [0 1 2 ]
+  1: [0 3 2 ]
+  2: [4 0 3 ]
+  3: [3 2 5 ]
+  4: [4 6 3 ]
+  5: [3 7 5 ]
+  6: [8 4 6 ]
+  7: [6 3 7 ]
+  8: [7 5 9 ]
+  9: [8 10 6 ]
+  10: [6 11 7 ]
+  11: [7 12 9 ]
+  12: [13 8 10 ]
+  13: [10 6 11 ]
+  14: [11 7 12 ]
+  15: [12 9 14 ]
+  16: [13 15 10 ]
+  17: [10 16 11 ]
+  18: [11 17 12 ]
+  19: [12 18 14 ]
+  20: [15 10 16 ]
+  21: [16 11 17 ]
+  22: [17 12 18 ]
+  23: [15 19 16 ]
+  24: [16 20 17 ]
+  25: [17 21 18 ]
+  26: [19 16 20 ]
+  27: [20 17 21 ]
+  28: [19 22 20 ]
+  29: [20 23 21 ]
+  30: [22 20 23 ]
+  31: [22 24 23 ]
+
+Return cell(0)s verticle Index[0 1 2]
+Return cell(0)s Real coordinate
+[[0.75 0.   0.  ]
+ [1.   0.   0.  ]
+ [1.   0.25 0.  ]]
+[0.0625, -0.0625, 0.0625, 0.0625, -0.0625, -0.0625, 0.0625, 0.0625, 0.0625, -0.0625, -0.0625, -0.0625, 0.0625, 0.0625, 0.0625, 0.0625, -0.0625, -0.0625, -0.0625, -0.0625, 0.0625, 0.0625, 0.0625, -0.0625, -0.0625, -0.0625, 0.0625, 0.0625, -0.0625, -0.0625, 0.0625, -0.0625]
+
+
+
+```
+
+
+---
+
+
+::: {.fragment}
+::: {.callout-tip title="Exercise 2 — Adjacency"}
+1. Create a $3 \times 3$ unit square mesh
+2. Compute and print $\mathrm{Adj}_{2,0}$, $\mathrm{Adj}_{2,1}$, and $\mathrm{Adj}_{1,0}$ for all entities
+3. For edge 0, find which cells contain it (upward adjacency $\mathrm{Adj}_{1,2}$)
+4. Verify: each interior edge is shared by exactly 2 cells, each boundary edge by 1
+:::
+:::
+
+---
+
+- Solution
+
+``` Python 
+mesh11=mesh.create_unit_square(MPI.COMM_WORLD,3,3,
+                               )
+
+mesh11.topology.create_connectivity(2,0)
+mesh11.topology.create_connectivity(2,1)
+mesh11.topology.create_connectivity(1,0)
+
+Adj20=mesh11.topology.connectivity(2,0)
+Adj21=mesh11.topology.connectivity(2,1)
+Adj10=mesh11.topology.connectivity(1,0)
+#Adj12=mesh11.topology.connectivity(1,2)
+
+print(f'$Adj_{{2,0}}${Adj20}')
+print(f'$Adj_{{2,1}}${Adj21}')
+print(f'$Adj_{{1,0}}${Adj10}')
+#print(f'$Adj_{1,2}${Adj12}')
+
+
+cnt=0
+
+for i in range(mesh11.topology.index_map(1).size_local):
+
+    for j in range(mesh11.topology.index_map(2).size_local):
+        x=Adj21.links(j)
+        if x[0]==i or x[1]==i or x[2]==i :
+            cnt+=1
+            print(f'Edge {i} in cell{j}')
+
+        if cnt==3:
+            print('broken mesh')
+            break
+```
+
+---
+
+- Output
+
+![exercise2](images/exercise2.png)
+
+
+---
+
+``` text
+$Adj_{2,0}$<AdjacencyList> with 18 nodes
+  0: [0 1 2 ]
+  1: [0 3 2 ]
+  2: [4 0 3 ]
+  3: [3 2 5 ]
+  4: [4 6 3 ]
+  5: [3 7 5 ]
+  6: [8 4 6 ]
+  7: [6 3 7 ]
+  8: [7 5 9 ]
+  9: [8 10 6 ]
+  10: [6 11 7 ]
+  11: [7 12 9 ]
+  12: [10 6 11 ]
+  13: [11 7 12 ]
+  14: [10 13 11 ]
+  15: [11 14 12 ]
+  16: [13 11 14 ]
+  17: [13 15 14 ]
+
+$Adj_{2,1}$<AdjacencyList> with 18 nodes
+  0: [4 1 0 ]
+  1: [5 1 2 ]
+  2: [2 7 3 ]
+  3: [6 8 5 ]
+  4: [9 7 11 ]
+  5: [13 8 10 ]
+  6: [11 16 12 ]
+  7: [10 15 9 ]
+  8: [14 19 13 ]
+  9: [17 16 22 ]
+  10: [20 15 18 ]
+  11: [23 19 21 ]
+  12: [18 24 17 ]
+  13: [21 26 20 ]
+  14: [27 24 25 ]
+  15: [29 26 28 ]
+  16: [28 30 27 ]
+  17: [32 30 31 ]
+
+$Adj_{1,0}$<AdjacencyList> with 33 nodes
+  0: [0 1 ]
+  1: [0 2 ]
+  2: [0 3 ]
+  3: [0 4 ]
+  4: [1 2 ]
+  5: [2 3 ]
+  6: [2 5 ]
+  7: [3 4 ]
+  8: [3 5 ]
+  9: [3 6 ]
+  10: [3 7 ]
+  11: [4 6 ]
+  12: [4 8 ]
+  13: [5 7 ]
+  14: [5 9 ]
+  15: [6 7 ]
+  16: [6 8 ]
+  17: [6 10 ]
+  18: [6 11 ]
+  19: [7 9 ]
+  20: [7 11 ]
+  21: [7 12 ]
+  22: [8 10 ]
+  23: [9 12 ]
+  24: [10 11 ]
+  25: [10 13 ]
+  26: [11 12 ]
+  27: [11 13 ]
+  28: [11 14 ]
+  29: [12 14 ]
+  30: [13 14 ]
+  31: [13 15 ]
+  32: [14 15 ]
+
+Edge 0 in cell0
+Edge 1 in cell0
+Edge 1 in cell1
+Edge 2 in cell1
+Edge 2 in cell2
+Edge 3 in cell2
+Edge 4 in cell0
+Edge 5 in cell1
+Edge 5 in cell3
+Edge 6 in cell3
+Edge 7 in cell2
+Edge 7 in cell4
+Edge 8 in cell3
+Edge 8 in cell5
+Edge 9 in cell4
+Edge 9 in cell7
+Edge 10 in cell5
+Edge 10 in cell7
+Edge 11 in cell4
+Edge 11 in cell6
+Edge 12 in cell6
+Edge 13 in cell5
+Edge 13 in cell8
+Edge 14 in cell8
+Edge 15 in cell7
+Edge 15 in cell10
+Edge 16 in cell6
+Edge 16 in cell9
+Edge 17 in cell9
+Edge 17 in cell12
+Edge 18 in cell10
+Edge 18 in cell12
+Edge 19 in cell8
+Edge 19 in cell11
+Edge 20 in cell10
+Edge 20 in cell13
+Edge 21 in cell11
+Edge 21 in cell13
+Edge 22 in cell9
+Edge 23 in cell11
+Edge 24 in cell12
+Edge 24 in cell14
+Edge 25 in cell14
+Edge 26 in cell13
+Edge 26 in cell15
+Edge 27 in cell14
+Edge 27 in cell16
+Edge 28 in cell15
+Edge 28 in cell16
+Edge 29 in cell15
+Edge 30 in cell16
+Edge 30 in cell17
+Edge 31 in cell17
+Edge 32 in cell17
+
+```
+
+---
+
+
+
+::: {.fragment}
+::: {.callout-tip title="Exercise 3 — Gmsh Integration"}
+1. Use Gmsh to create an L-shaped domain (unit square minus a quarter)
+2. Import into DOLFINx
+3. Count mesh entities and verify the mesh covers the expected area
+4. Identify and count boundary facets on each segment of the L-shape
+:::
+:::
+
+
+
+---
+
+## Solution
+
+``` Python 
+gmsh.initialize()
+
+a=gmsh.model.occ.addRectangle(0,0,0,1,1)
+b=gmsh.model.occ.addRectangle(0.5,0.5,0,0.5,0.5)
+c,_=gmsh.model.occ.cut([(2,a)],[(2,b)])
+
+gmsh.model.occ.synchronize()
+
+gmsh.model.addPhysicalGroup(2,[c[0][1]],1,'s')
+
+gmsh.option.setNumber('Mesh.MeshSizeMin',0.49)
+gmsh.option.setNumber('Mesh.MeshSizeMax',0.5)
+
+gmsh.model.mesh.generate(2)
+
+meshdata=gmshio.model_to_mesh(gmsh.model,MPI.COMM_WORLD,0,2)
+domain=meshdata.mesh
+
+gmsh.finalize()
+
+with XDMFFile(MPI.COMM_WORLD, "Lshape1.xdmf", "w") as xdmf:
+    xdmf.write_mesh(domain)
+
+
+
+domain.topology.create_connectivity(2,1)
+domain.topology.create_connectivity(1,0)
+
+
+print(f'vertex{domain.topology.index_map(0).size_local}')
+print(f'edgy{domain.topology.index_map(1).size_local}')
+print(f'cell {domain.topology.index_map(2).size_local}')
+
+
+Adj21=domain.topology.connectivity(2,1)
+
+y=0
+z=0
+
+for i in range(domain.topology.index_map(1).size_local):
+    for j in range(domain.topology.index_map(2).size_local):
+        x=Adj21.links(j)
+        if x[0]==i or x[1]==i or x[2]==i:
+            y+=1
+    if y==1: z+=1
+    y=0
+
+print(f'boundary facet {z}')
+```
+
+---
+
+- Output
+
+![Lshape](images/Lshape1.png)
+
+---
+
+- Output
+
+``` text
+
+vertex22
+edgy49
+cell 28
+boundary facet 14
+
+```
+
+We know domain is flat by **Euler's polyhedron formula**.
+
+We can't know domain created well directly without visualization.
+
+---
+
+## Fix the number of divisions.
+
+``` Python
+
+gmsh.initialize()
+
+a=gmsh.model.occ.addRectangle(0,0,0,1,1)
+b=gmsh.model.occ.addRectangle(0.5,0.5,0,0.5,0.5)
+c,_=gmsh.model.occ.cut([(2,a)],[(2,b)])
+
+gmsh.model.occ.synchronize()
+
+gmsh.model.addPhysicalGroup(2,[c[0][1]],1,'s')
+
+tag=gmsh.model.getBoundary(c,oriented=False)
+
+for dim,tags in tag:
+    L=gmsh.model.occ.getMass(dim,tags)
+    if round(L)==1:
+        gmsh.model.mesh.setTransfiniteCurve(tags,3)
+    else:
+        gmsh.model.mesh.setTransfiniteCurve(tags,2)
+
+
+
+gmsh.model.mesh.generate(2)
+
+meshdata=gmshio.model_to_mesh(gmsh.model,MPI.COMM_WORLD,0,2)
+domain=meshdata.mesh
+
+gmsh.finalize()
+
+with XDMFFile(MPI.COMM_WORLD, "Lshape4.xdmf", "w") as xdmf:
+    xdmf.write_mesh(domain)
+
+
+
+domain.topology.create_connectivity(2,1)
+domain.topology.create_connectivity(1,0)
+
+
+print(f'vertex{domain.topology.index_map(0).size_local}')
+print(f'edgy{domain.topology.index_map(1).size_local}')
+print(f'cell {domain.topology.index_map(2).size_local}')
+
+
+Adj21=domain.topology.connectivity(2,1)
+
+y=0
+z=0
+
+for i in range(domain.topology.index_map(1).size_local):
+    for j in range(domain.topology.index_map(2).size_local):
+        x=Adj21.links(j)
+        if x[0]==i or x[1]==i or x[2]==i:
+            y+=1
+    if y==1: z+=1
+    y=0
+
+print(f'boundary facet {z}')
+
+```
+
+---
+
+![Lshape](images/Lshape4.png)
+
+---
+
+- Output 
+
+``` text 
+
+vertex11
+edgy22
+cell 12
+boundary facet 8
+
+```
+
+---
+
+
+
+
+
+
+
+
+
