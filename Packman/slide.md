@@ -1,0 +1,168 @@
+---
+title: "Create 'Packman' domain"
+subtitle: "Capstone design "
+format: revealjs 
+theme: default
+embed-resources: True
+---
+
+## Index
+
+$\S$ 1. Concept
+
+$\S$ 2. Create domain with gmsh API
+
+$\S$ 3. Create domain with gmsh GUI
+
+---
+
+## $\S$ 1. Concept
+
+---
+
+
+### $\S$ 1.1 Pack man
+
+![packman](images/packmanimage.png){width=30%}
+
+---
+
+### $\S$ 1.2 Create order
+
+1. Create unit disk.
+2. Cut sector on disk.
+3. Cut eye disk
+4. Refine mesh around the mouth
+5. Visualize
+
+---
+
+### $\S$ 1.3 Concept detail
+
+![detail](images/packman1_explain.png)
+
+---
+
+## $\S$ 2 Create domain with gmsh API
+
+---
+
+### $\S$ 2.1 Create disks
+
+- Create eye and face
+- Use `gmsh.model.occ.addDisk(x,y,z,dx,dy)`
+
+---
+
+### $\S$ 2.2 Create sector
+#### $\S$ 2.2.0 Define points
+
+![](images/packman1_explain.png){width=20%}
+
+- Add dots using create sector.
+- Sector defined by three points.
+- Use `gmsh.model.occ.addPoint(x,y,z)`
+
+---
+
+#### $\S$ 2.2.1 Define lines of sector
+
+![](images/packman1_explain.png){width=20%}
+
+- Make line by connect poits
+- Using `gmsh.model.occ.addLIne(dot_centor,dot1)`
+
+---
+
+#### $\S$ 2.2.2 Define sector's boudary
+
+![](images/packman1_explain.png){width=20%}
+
+``` Python
+loop=gmsh.model.occ.addCurveLoop([l1,curve,l2])
+```
+
+---
+
+#### $\S$ 2.2.3 Defined sector plane
+
+![](images/packman1_explain.png){width=20%}
+
+```Python
+surf=gmsh.model.occ.addPlaneSurface([loop])
+```
+
+---
+
+### $\S$ 2.3 Cut eye and mout
+
+- Using `gmsh.model.occ.cut([dim,index],[(dim,),(dim,),....])`
+- Object - tool
+- Object is disk.
+- Tool is eye and mouth
+
+---
+
+### Result
+
+![](images/packman1.png)
+
+---
+
+
+### $\S$ 2.4 Create Mesh
+#### $\S$ 2.4.0 Around the eye
+
+- Create mesh densely around eye
+- Eye have smaller radius than face. 
+- So Eye's curcature is bigger than face.
+- Use `gmsh.option.setNumber("Mesh.MeshSizeFromCurvature",N)`
+
+---
+
+#### $\S$ 2.4.1 Around the mouth 
+
+- Set region.
+
+- `gmsh.model.mesh.field.add("Box",tag)`
+
+---
+
+- Set Options
+
+```Python
+gmsh.model.mesh.field.setNumber(1,"VIn",0.01)
+gmsh.model.mesh.field.setNumber(1,"VOut",0.1)
+gmsh.model.mesh.field.setNumber(1,"XMin",-x1)
+gmsh.model.mesh.field.setNumber(1,"XMax",x1)
+gmsh.model.mesh.field.setNumber(1,"YMax",x1)
+gmsh.model.mesh.field.setNumber(1,"YMin",-x1)
+gmsh.model.mesh.field.setNumber(1,"ZMin",0)
+gmsh.model.mesh.field.setNumber(1,"ZMax",0)
+```
+
+---
+
+- Order to use this field
+- `gmsh.model.mesh.field.setAsBackgroundMesh(1)`
+
+- Set PhysicalGroup 
+- PhysicalGroup is not very important...
+```Python
+tags=[tags for dim,tags in packman]
+gmsh.model.addPhysicalGroup(2,tags,2)
+```
+
+---
+
+- result
+
+![](images/packman1edge.png)
+
+---
+
+## $\S$ 3 Create domain with gmsh GUI
+
+and visualize demonstrate these live.
+
+---
