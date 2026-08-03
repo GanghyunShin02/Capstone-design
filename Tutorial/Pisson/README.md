@@ -12,6 +12,7 @@ format:
 ## Index
 
 $\S$ 1.Proof Poisson equation
+
 $\S$ 2.Comparison error
 
 ---
@@ -27,6 +28,7 @@ u=1+x^2+2y^2  \;\; (x,y) \in \partial \Omega
 $$
 
 - Analytic soluion is
+  
 $$
 u=1+x^2+2y^2  
 $$
@@ -49,10 +51,12 @@ $$
 ### $\S$ 1.1 Proof Poisson Equation by Strong imposition
 
 - Week formulation
+
+
 $$
 \begin{align}
-  \int_{\Omega} \nabla u \cdot \nabla v~\mathrm{d}x
-  - \int_{\partial\Omega}\nabla u \cdot n v~\mathrm{d}s = \int_{\Omega} f v~\mathrm{d}x.
+\int_{\Omega} \nabla u \cdot \nabla v~\mathrm{d}x
+\int_{\partial\Omega}\nabla u \cdot n v~\mathrm{d}s = \int_{\Omega} f v~\mathrm{d}x.
 \end{align}
 $$
 
@@ -72,12 +76,14 @@ $$
 
 ---
 
+
 $$
 \begin{align}
-  -\int_{\partial\Omega} \nabla  v \cdot n (u-u_D)~\mathrm{d}s
-  + \frac{\alpha}{h} \int_{\partial\Omega} (u-u_D)v~\mathrm{d}s.
+\int_{\partial\Omega} \nabla  v \cdot n (u-u_D)~\mathrm{d}s
++\frac{\alpha}{h} \int_{\partial\Omega} (u-u_D)v~\mathrm{d}s.
 \end{align}
 $$
+
 
 - So add these terms
 
