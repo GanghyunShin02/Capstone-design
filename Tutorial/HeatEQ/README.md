@@ -1,4 +1,4 @@
-````markdown
+
 # FEniCSx Diffusion Tutorial - Modified Implementation
 
 This code was written based on Jørgen S. Dokken's FEniCSx tutorial,  
