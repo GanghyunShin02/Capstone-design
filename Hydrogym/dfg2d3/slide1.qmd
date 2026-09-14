@@ -1,0 +1,130 @@
+---
+title: "HydroGym #1"
+subtitle: DFG 2D -3 benchmark
+format:
+  revealjs:
+    theme: default
+    embed-resources: true
+
+---
+
+# Index
+
+- prologue
+
+- benchmark
+
+- Learning
+
+---
+
+## Prologue
+
+- Hydrogym's official example has 'Fludic pinball control'.
+
+![pinball](images/pinball_example.png){width=50%}
+
+
+---
+
+- It controlls obstacle's radius velocity to decrese drag and lift.
+
+- Example controlled at Re=100 and Re=150.
+
+- Writer says 
+>RL agents discover coordinated rotationstrategies achieving ~90% of drag reduction through counterrotating rear cylinders that inject momoentum into the wake ....
+
+---
+
+## Apply to DFG 2D -3 benchmark
+
+- Pinball example looks very simular to DFG 2D -3 benchmark.
+
+![benchmark](images/turek.png){width=50%}
+
+- Also benchmark's Re# is 100
+
+---
+
+### Enviroment
+
+- VMware workstation virtual machine , Ubuntu 24.04.3
+
+- Download Firedrake and HydroGym on venv.
+
+---
+
+### Mesh 
+
+![mesh](images/mesh.png){width=50%}
+
+- Made in Gmsh GUI,1708 cells 
+
+
+---
+
+### Results
+
+#### Test at $\Omega=0$
+
+![Drag](images/omega0_Cd.png){width=30%}
+
+![Drag_tutorial](images/tutorial_drag.png){width=30%}
+
+---
+
+![Lift](images/omega0_Cl.png){width=30%}
+
+![Lift_tutorial](images/tutorial_lift.png){width=30%}
+
+---
+
+![pressure drop](images/omega0_pressuredrop.png){width=30%}
+
+![dP_tutorial](images/tutorial_pressure.png){width=30%}
+
+---
+
+![omega](images/omega0_omega.png)
+
+---
+
+### Learning
+
+- Object Function
+
+$$
+J=\frac{C_D}{3}+(\frac{C_L}{0.4})^2+(\frac{\omega}{10})^2
+$$
+
+- Train with PPO algorythm.
+
+---
+
+#### Results
+
+![Drag](images/train_Cd.png){width=50%}
+
+---
+
+![Lift](images/train_Cl.png){width=50%}
+
+---
+
+![prssure](images/train_pressure_difference.png){width=50%}
+
+---
+
+![Omega](images/train_omega.png){width=50%}
+
+---
+
+![reward](images/train_reward.png){width=50%}
+
+---
+
+##### Discussion
+
+
+- We can just check agent changes $\omega$
+
