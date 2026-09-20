@@ -1,0 +1,329 @@
+---
+title: "HydroGym #2"
+subtitle: "Getting Started Examples"
+format: 
+  revealjs:
+   theme: default
+   embed-resources: true
+---
+
+# Contents
+
+- Setup
+    * 0. Getting Started
+
+- Basic Structure
+    * 1. Example 1: Basic Cylinder Environment
+    * 2. Example 2: Simulation with Multiple Substeps
+    * 3. Example 3: Training with Stable-Baselines3
+
+---
+
+- Checkpoints
+    * 4. Example 5: Local Checkpoint Directory
+    * 5. Example 4: Automatic Checkpoint Loading
+    * 6. Example 6: Multiple Checkpoints for Curriculum Learning
+
+- Development
+    * 7. Example 7: Probe-Based Observation
+    * 8. Example 8: Using Callbacks
+
+---
+
+
+## 0. Getting Started
+
+The README at `examples/firedrake/getting_started/README.md` in the Dynamics Lab GitHub repository
+
+introduces
+`config_reference.py`, `test_firedrake.py`, and `train_sb3_firedrake.py`.
+
+---
+
+`config_reference.py` contains improved versions of the example code provided on the website.
+
+`test_firedrake.py` tests the environment.
+
+`train_sb3_firedrake.py` provides an example of training an RL agent.
+
+---
+
+
+### Errors When Running the Example
+
+The official tutorial provides the following commands:
+
+```bash
+# Single process
+python test_firedrake_env.py --environment cylinder --num-steps 10
+
+# MPI parallel
+mpirun -np 4 python test_firedrake_env.py --environment cylinder --num-steps 50
+```
+
+---
+
+When running the official HydroGym Firedrake example, the environment failed before the CFD simulation started.
+
+
+```text
+File is not a valid Gmsh file,
+expecting $MeshFormat, not version
+```
+
+The error occurred while Firedrake was loading the `medium.msh` file.
+
+---
+
+### Root Cause: Git LFS Pointer File
+
+The installed `medium.msh` was inspected:
+
+```bash
+head -n 3 medium.msh
+```
+
+Output:
+
+```text
+version https://git-lfs.github.com/spec/v1
+oid sha256: ...
+size ...
+```
+
+- The file was **not an actual Gmsh mesh**.
+- It was only a **Git LFS pointer file**.
+- Therefore, Firedrake could not recognize it as a valid mesh.
+
+---
+
+### Solution
+
+The mesh was regenerated from the provided `.geo` file:
+
+```bash
+gmsh medium.geo -2 -format msh2 -o medium.msh
+```
+
+The regenerated file had the correct Gmsh format:
+
+```text
+$MeshFormat
+2.2 0 8
+$EndMeshFormat
+```
+
+After regeneration:
+
+- Firedrake successfully loaded the mesh.
+- HydroGym correctly recognized the environment.
+- The simulation proceeded to checkpoint loading.
+
+**Key lesson:** Verify the actual mesh file before debugging the CFD solver.
+
+---
+
+## 1. Example 1: Basic Cylinder Environment
+
+- This example shows the basic code structure.
+
+- The key configuration is:
+
+```Python
+env_config = {
+    'flow': hgym.Cylinder,
+    'flow_config': {'mesh': 'medium', 'Re': 100},
+    'solver': hgym.SemiImplicitBDF,
+    'solver_config': {'dt': 1e-2},
+}
+```
+
+---
+
+![Ex.1](Example_1/images/Ex1video.mp4)
+
+---
+
+## 2. Example 2: Simulation with Multiple Substeps
+
+- The action is not updated at every solver step.
+- One action is applied over n solver steps.
+- This saves computational resources and improves performance.
+
+```Python
+env_config = {
+    'flow': hgym.Cylinder,
+    'flow_config': {'mesh': 'medium', 'Re': 100},
+    'solver': hgym.SemiImplicitBDF,
+    'solver_config': {'dt': 1e-2},
+    'actuation_config': {
+        'num_substeps': 5,              # Run 5 solver steps per action
+        'reward_aggregation': 'mean',   # Average rewards over substeps
+    },
+}
+```
+
+---
+
+## 3. Example 3: Training with Stable-Baselines3
+
+- Stable-Baselines3 is a Python library that provides standard RL algorithms.
+- In particular, it provides PPO, DDPG, and TD3.
+
+
+## 4. Example 5: Local Checkpoint Directory
+
+- A checkpoint is a saved state during training.
+- Users can resume from a checkpoint.
+
+- Dynamics Lab provides many checkpoints on Hugging Face.
+
+---
+
+- The checkpoint files have the `.ckpt` extension.
+- The official example code uses `.h5` checkpoint files.
+- I confirmed that `.ckpt` files also work.
+
+---
+
+- I used the `Cavity_2D_Re7500_medium_FD` checkpoint from Dynamics Lab.
+- Unfortunately, the dataset is large, so I downloaded only a small portion.
+- This may cover approximately 0–0.025 s.
+
+[Link](https://huggingface.co/datasets/dynamicslab/HydroGym-environments/tree/main/Cavity_2D_Re7500_medium_FD)
+
+---
+
+![dd](Example_4/images/Ex4video.mp4)
+
+---
+
+## 5. Example 4: Automatic Checkpoint Loading
+
+- I am not sure what the author means.
+- Does this mean that HydroGym automatically finds a checkpoint on Hugging Face?
+- Or does it find a checkpoint already included with the HydroGym examples?
+
+---
+
+```Python
+# Checkpoints are automatically inferred from flow config and downloaded from HF Hub
+env_config = {
+    'flow': hgym.Cylinder,
+    'flow_config': {
+        'mesh': 'medium',
+        'Re': 100,
+        # No 'restart' specified - automatically loads 'Cylinder_2D_Re100_medium_FD'
+    },
+    'solver': hgym.SemiImplicitBDF,
+    'solver_config': {'dt': 1e-2},
+}
+
+env = FlowEnv(env_config)
+# Checkpoint auto-downloaded from HF Hub and loaded!
+print(f"Loaded checkpoint: {env.flow.checkpoint_path}")
+```
+
+---
+
+## 6. Example 6: Multiple Checkpoints for Curriculum Learning
+
+- I specify several initial states.
+- The RL agent randomly selects an initial state from those I specified.
+- This increases the diversity of training states and helps the policy generalize beyond a single initial condition.
+
+---
+
+```Python
+env_config = {
+    'flow': hgym.Pinball,
+    'flow_config': {
+        'mesh': 'fine',
+        'Re': 30,
+        'restart': [
+            'checkpoint_early.h5',
+            'checkpoint_mid.h5',
+            'checkpoint_late.h5',
+        ],
+    },
+    'solver': hgym.SemiImplicitBDF,
+    'solver_config': {'dt': 1e-2},
+}
+```
+
+---
+
+## 7. Example 7: Probe-Based Observation
+
+- Specify probe locations that we consider important.
+- Use observations from these probes for training.
+
+---
+
+```Python
+import numpy as np
+
+# Define wake probes
+wake_probes = [(x, 0.0) for x in np.linspace(1.0, 10.0, 20)]
+
+env_config = {
+    'flow': hgym.Cylinder,
+    'flow_config': {
+        'mesh': 'medium',
+        'Re': 100,
+        'observation_type': 'velocity_probes',
+        'probes': wake_probes,
+    },
+    'solver': hgym.SemiImplicitBDF,
+    'solver_config': {'dt': 1e-2},
+}
+
+env = FlowEnv(env_config)
+obs, _ = env.reset()
+print(f"Observation shape: {obs.shape}")  # (40,) for 20 probes × 2 velocity components
+```
+
+---
+
+
+- Probe output
+
+```text
+Observation shape: (40,)
+obs[-0.15488237 -0.16019162 -0.06361766  0.09369587  0.42523721  0.66388656
+  0.71783966  0.64501864  0.6285661   0.76957667  0.85741427  0.85094709
+  0.79187414  0.72624329  0.74207829  0.82027832  0.86069161  0.84759284
+  0.79587634  0.75231327 -0.17196294  0.18677793  0.57868901  0.50837954
+ -0.08409665 -0.54991825 -0.57680305 -0.54979187 -0.25181187  0.33382708
+  0.52058526  0.4909093   0.49293956  0.30499254 -0.18298415 -0.43957614
+ -0.43968621 -0.4333516  -0.38675252 -0.07394321]
+```
+
+---
+
+
+## 8. Example 8: Using Callbacks
+
+
+- A callback is a function or object called automatically at specified points during execution.
+- It can perform tasks such as logging or saving checkpoints.
+
+```Python
+from hydrogym.firedrake.io import CheckpointCallback, LogCallback
+```
+
+---
+
+### Error in My Environment
+
+- The import failed in my installed HydroGym environment.
+
+```text
+ModuleNotFoundError: No module named 'hydrogym.firedrake.io'
+```
+
+- Therefore, I could not run the callback example.
+- Basic simulations can still run without these callbacks.
+
+
+
