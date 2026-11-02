@@ -1,14 +1,6 @@
----
-title: "For A"
-subtitle: "A Laplace–Fourier neural operator with wavenumber-dependent poles"
-format: 
-  revealjs:
-   theme: default
-   embed-resources: true
-   slide-number: true
----
+# For A
 
-## 
+A Laplace–Fourier neural operator with wavenumber-dependent poles
 
 1. A linear PDE is many ODEs, one per wavenumber. The pole of each ODE is the dispersion relation.
 2. We make the poles of LNO depend on the wavenumber: $\mu_n \to \mu_n(k)$.
@@ -20,50 +12,25 @@ format:
 
 Consider the linear diffusion equation with constant diffusivity $D$:
 
-$$
-\frac{\partial u(x,t)}{\partial t}
-=
-D\frac{\partial^2u(x,t)}{\partial x^2}.
-$$
+$$ \frac{\partial u(x,t)}{\partial t} = D\frac{\partial^2u(x,t)}{\partial x^2}. $$
 
 ---
 
 Define the Fourier transform with respect to the spatial variable $x$:
 
-$$
-\widehat{u}(k,t)
-=
-\int_{-\infty}^{\infty}
-u(x,t)e^{-ikx}\,dx.
-$$
+$$ \widehat{u}(k,t) = \int_{-\infty}^{\infty} u(x,t)e^{-ikx}\,dx. $$
 
 ---
 
 Assuming sufficient smoothness and vanishing boundary terms,
 
-$$
-\mathcal{F}_x\left[
-\frac{\partial u}{\partial t}
-\right]
-=
-\frac{\partial\widehat{u}}{\partial t},
-\qquad
-\mathcal{F}_x\left[
-\frac{\partial^2u}{\partial x^2}
-\right]
-=
--k^2\widehat{u}.
-$$
+$$ \mathcal{F}_x\left[\frac{\partial u}{\partial t}\right] = \frac{\partial\widehat{u}}{\partial t}, \qquad \mathcal{F}_x\left[\frac{\partial^2u}{\partial x^2}\right] = -k^2\widehat{u}. $$
 
 ---
 
 The transformed equation is therefore
 
-$$
-\frac{d\widehat{u}_k(t)}{dt}
-=
--Dk^2\widehat{u}_k(t).
-$$
+$$ \frac{d\widehat{u}_k(t)}{dt} = -Dk^2\widehat{u}_k(t). $$
 
 For each fixed wavenumber $k$, the PDE becomes a first-order ODE in time.
 
@@ -71,15 +38,11 @@ For each fixed wavenumber $k$, the PDE becomes a first-order ODE in time.
 
 The solution is
 
-$$
-\widehat{u}_k(t) = e^{-Dk^2 t}\,\widehat{u}_k(0).
-$$
+$$ \widehat{u}_k(t) = e^{-Dk^2 t}\,\widehat{u}_k(0). $$
 
 Each mode decays at its own rate. The rate depends on $k$:
 
-$$
-\lambda(k) = -Dk^2 .
-$$
+$$ \lambda(k) = -Dk^2. $$
 
 This is the **dispersion relation**.
 
@@ -87,16 +50,11 @@ This is the **dispersion relation**.
 
 ## Laplace transform in time
 
-$$
-s\,\widehat{U}_k(s) - \widehat{u}_k(0) = \lambda(k)\,\widehat{U}_k(s)
-\quad\Longrightarrow\quad
-\widehat{U}_k(s) = \frac{\widehat{u}_k(0)}{s - \lambda(k)} .
-$$
+$$ s\,\widehat{U}_k(s) - \widehat{u}_k(0) = \lambda(k)\,\widehat{U}_k(s) \quad\Longrightarrow\quad \widehat{U}_k(s) = \frac{\widehat{u}_k(0)}{s - \lambda(k)}. $$
 
 One pole, at $s = \lambda(k)$.
 
 > For a linear PDE, **the pole of each mode is the dispersion relation.**
-
 
 ---
 
@@ -104,9 +62,7 @@ One pole, at $s = \lambda(k)$.
 
 LNO writes the kernel as a rational function with **constant** poles:
 
-$$
-K_\theta(s) = \sum_{n=1}^{N} \frac{\beta_n}{s - \mu_n} .
-$$
+$$ K_\theta(s) = \sum_{n=1}^{N} \frac{\beta_n}{s - \mu_n}. $$
 
 In 2D or 3D, the kernel is a **product of per-axis poles**.
 
@@ -120,13 +76,9 @@ Recent hybrids (ALNO, LFNO) split transient and steady parts in time, but still 
 
 ## The idea
 
-$$
-\mu_n \;\longrightarrow\; \mu_n(k), \qquad \beta_n \;\longrightarrow\; \beta_n(k)
-$$
+$$ \mu_n \;\longrightarrow\; \mu_n(k), \qquad \beta_n \;\longrightarrow\; \beta_n(k) $$
 
-$$
-K_\theta(k, s) = \sum_{n=1}^{N} \frac{\beta_n(k)}{s - \mu_n(k)}
-$$
+$$ K_\theta(k, s) = \sum_{n=1}^{N} \frac{\beta_n(k)}{s - \mu_n(k)} $$
 
 Space by Fourier, time by Laplace. The pole function $\mu_n(k)$ ties them together.
 
@@ -137,20 +89,18 @@ One pole function drives both the transient part $\sum_n \gamma_n(k)e^{\mu_n(k)t
 ## How to write $\mu_n(k)$
 
 **Polynomial** — strong prior, readable directly:
-$$
-\mu_n(k) = \sum_j c_{n,j}|k|^{2j} + i\,(d_{n,1}k + \dots)
-$$
+
+$$ \mu_n(k) = \sum_j c_{n,j}|k|^{2j} + i\,(d_{n,1}k + \dots) $$
 
 **MLP** — flexible, read by fitting afterwards:
-$$
-\mu_n(k) = g_\theta(k)
-$$
+
+$$ \mu_n(k) = g_\theta(k) $$
 
 Because $\mu_n(k)$ is continuous in $k$, we can evaluate it at modes never seen in training. Train at $64^2$, test at $256^2$.
 
 ---
 
-## Application : 
+## Application :
 
 time delay
 
@@ -196,7 +146,7 @@ Each Fourier mode is multiplied by a learned weight $R(k)$.
 
 Kernel is a rational function in Laplace space:
 
-$$K_\theta(s) = \sum_n \frac{\beta_n}{s-\mu_n}$$
+$$ K_\theta(s) = \sum_n \frac{\beta_n}{s-\mu_n} $$
 
 - Output = steady part + transient part
 - Works with non-periodic input
